@@ -23,22 +23,31 @@ REQUEST_HEADERS = {
     "Connection": "keep-alive"
 }
 
-# ✅ 精准提取pubDate并转北京时间
+# ✅ 修复：支持GMT格式解析，精准转北京时间
 def get_show_time(news):
     beijing_tz = timezone(timedelta(hours=8))
-    pub_date_str = news.get("pubdate", news.get("published", ""))
+    # 优先获取pubdate/published（新闻发布时间），去除前后空格
+    pub_date_str = news.get("pubdate", news.get("published", "")).strip()
     
     if pub_date_str:
         try:
+            # 新增支持GMT时区格式，调整格式顺序（高频在前）
             dt_formats = [
-                "%a, %d %b %Y %H:%M:%S %z",
-                "%a, %d %b %Y %H:%M %z",
-                "%d %b %Y %H:%M:%S %z",
-                "%Y-%m-%d %H:%M:%S %z"
+                "%a, %d %b %Y %H:%M:%S GMT",  # 目标RSS的实际格式（核心修复）
+                "%a, %d %b %Y %H:%M:%S %z",   # 带+HHMM/-HHMM时区的格式
+                "%a, %d %b %Y %H:%M %z",      # 无秒数+时区
+                "%d %b %Y %H:%M:%S %z",       # 无时区缩写+时区
+                "%Y-%m-%d %H:%M:%S %z"        # 数字日期格式
             ]
             for fmt in dt_formats:
                 try:
-                    dt_utc = datetime.datetime.strptime(pub_date_str, fmt)
+                    dt = datetime.datetime.strptime(pub_date_str, fmt)
+                    # 若解析结果是" naive 时间"（如GMT格式），手动绑定UTC时区
+                    if dt.tzinfo is None or dt.tzinfo.utcoffset(dt) is None:
+                        dt_utc = dt.replace(tzinfo=timezone.utc)
+                    else:
+                        dt_utc = dt.astimezone(timezone.utc)
+                    # 转北京时间并返回
                     dt_beijing = dt_utc.astimezone(beijing_tz)
                     return dt_beijing.strftime("%Y-%m-%d %H:%M")
                 except:
@@ -46,15 +55,18 @@ def get_show_time(news):
         except:
             pass
 
-    updated_str = news.get("updated", "")
+    # 若发布时间解析失败，尝试用updated字段
+    updated_str = news.get("updated", "").strip()
     if updated_str:
         try:
+            # 处理ISO格式（如2026-01-13T11:57:00Z）
             dt_utc = datetime.datetime.fromisoformat(updated_str.replace('Z', '+00:00'))
             dt_beijing = dt_utc.astimezone(beijing_tz)
             return dt_beijing.strftime("%Y-%m-%d %H:%M")
         except:
             pass
 
+    # 最终兜底：返回当前北京时间（避免空值）
     current_bj = datetime.datetime.now(beijing_tz)
     return current_bj.strftime("%Y-%m-%d %H:%M")
 
@@ -85,10 +97,10 @@ def fetch_news():
         response.raise_for_status()
         news_list = feedparser.parse(response.content).entries
         if not news_list:
-            print("📭 未抓取到任何Trump Truth资讯")
+            print("📭 未抓取到任何资讯")
             return None, None
         latest_link = news_list[0]["link"].strip()
-        print(f"📭 成功抓取到{len(news_list)}条Trump Truth资讯")
+        print(f"📭 成功抓取到{len(news_list)}条资讯")
         return news_list, latest_link
     except Exception as e:
         print(f"❌ 资讯抓取失败：{str(e)}")
@@ -122,7 +134,7 @@ def check_push():
 # ✅ 核心修改：只改【时间】和（懂王转发贴）间距为1px，其他全部不变
 def make_email_content(all_news):
     if not all_news:
-        return "<p style='font-size:16px; color:#FFFFFF;'>暂无可用的Trump Truth资讯</p>"
+        return "<p style='font-size:16px; color:#FFFFFF;'>暂无可用的资讯</p>"
     news_list = all_news[:300]
 
     # 颜色配置（匹配截图）
@@ -159,7 +171,7 @@ def make_email_content(all_news):
                 <div style='flex: 1;'>
                     <span style='color:{time_color}; font-weight:bold; font-size:15px;'>【{show_time}】</span>
                     <!-- 仅改这行：间距从 0 6px 改为 0 1px，实现贴近效果 -->
-                    <span style='color:{forward_color}; font-weight:bold; margin:0 0px; font-size:15px;'>{forward_tag}</span>
+                    <span style='color:{forward_color}; font-weight:bold; margin:0 1px; font-size:15px;'>{forward_tag}</span>
                 </div>
             </div>
             <p style='margin:{line_margin}; padding:0 0 0 {content_indent}; line-height:1.4; font-size:16px; color:{content_color}; margin-top:0;'>
@@ -215,7 +227,7 @@ if __name__ == "__main__":
     cst_now = datetime.datetime.now(timezone(timedelta(hours=8))).strftime("%Y-%m-%d %H:%M:%S")
     print(f"==================================================")
     print(f"📅 执行时间 | UTC：{utc_now} | 北京时间：{cst_now}")
-    print(f"📡 订阅源 | Trump Truth（{RSS_URL}）")
+    print(f"📡 订阅源 | {RSS_URL}")
     print(f"==================================================")
 
     try:
