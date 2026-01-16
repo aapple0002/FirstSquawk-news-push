@@ -1,4 +1,4 @@
-2import feedparser
+import feedparser
 import smtplib
 from email.mime.text import MIMEText
 import requests
