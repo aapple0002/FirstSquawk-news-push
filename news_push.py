@@ -15,7 +15,7 @@ SMTP_SERVER = "smtp.gmail.com"
 CUSTOM_NICKNAME = "📩全球快讯"
 
 # ---------------------- 基础配置（不用改） ----------------------
-RSS_URL = "https://rss.app/feeds/YnTegq50OCluW6vH.xml"
+RSS_URL = "https://rss.app/feeds/Shhb1VnkP2BjsmIm.xml"
 LAST_LINK_FILE = "last_link.txt"
 REQUEST_HEADERS = {
     "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
