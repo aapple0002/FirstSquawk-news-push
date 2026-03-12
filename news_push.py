@@ -1,11 +1,13 @@
 import feedparser
-import requests
 import smtplib
 from email.mime.text import MIMEText
 import os
 import re
 import datetime
 from datetime import timezone, timedelta
+# 版本2需要用到 urllib，先导入
+import urllib.request
+from urllib.error import HTTPError
 
 # ---------------------- Gmail配置（从GitHub Secret读取） ----------------------
 GMAIL_EMAIL = os.getenv("GMAIL_EMAIL")
@@ -17,10 +19,9 @@ CUSTOM_NICKNAME = "📩全球快讯"
 # ---------------------- 固定配置 ----------------------
 RSS_URL = "https://rss.xcancel.com/FirstSquawk/rss"
 LAST_LINK_FILE = "last_link.txt"
-# 每次最多推送前100条新内容
-MAX_PUSH_COUNT = 100
+MAX_PUSH_COUNT = 100  # 每次最多推100条
 
-# ===================== 时间格式化（保留原逻辑） =====================
+# ===================== 时间格式化（原逻辑不变） =====================
 def get_show_time(news):
     beijing_tz = timezone(timedelta(hours=8))
     pub_date_str = news.get("pubdate", news.get("published", "")).strip()
@@ -51,7 +52,7 @@ def get_show_time(news):
     current_bj = datetime.datetime.now(beijing_tz)
     return current_bj.strftime("%Y-%m-%d %H:%M")
 
-# ===================== 内容解析（保留原逻辑） =====================
+# ===================== 内容解析（原逻辑不变） =====================
 def parse_news_type_and_content(news):
     raw_title = news.get("title", "").strip()
     no_title_flags = ["[No Title]", "no title", "untitled", "- Post from "]
@@ -71,31 +72,50 @@ def parse_news_type_and_content(news):
 
     return forward_tag, content_text
 
-# ===================== 核心修复：带浏览器请求头抓取RSS（解决400错误） =====================
+# ===================== 核心修复：版本1（最简，优先用） =====================
+# 用 feedparser 原生解析，直接设置 User-Agent 伪装浏览器
 def fetch_news():
-    headers = {
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
-        "Accept": "application/rss+xml,application/xml,*/*;q=0.9",
-        "Accept-Language": "en-US,en;q=0.9,zh-CN;q=0.8,zh;q=0.7",
-        "Accept-Encoding": "gzip, deflate, br",
-        "Connection": "keep-alive"
-    }
     try:
-        response = requests.get(RSS_URL, headers=headers, timeout=20)
-        response.raise_for_status()
-        feed = feedparser.parse(response.content)
+        feed = feedparser.parse(
+            RSS_URL,
+            agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
+        )
         if not feed.entries:
             print("📭 未抓取到任何资讯")
             return [], None
-        # 取前MAX_PUSH_COUNT条（默认100条）
         news_list = feed.entries[:MAX_PUSH_COUNT]
         latest_link = news_list[0]["link"].strip() if news_list else None
         return news_list, latest_link
-    except requests.exceptions.RequestException as e:
+    except Exception as e:
         print(f"❌ 资讯抓取失败：{str(e)}")
         return [], None
 
-# ===================== 持久化：加载/保存最后一条链接 =====================
+# ===================== 核心修复：版本2（加 Referer，版本1失败时用） =====================
+# 用 urllib 手动请求，加上 Referer 伪装成从原站跳转
+# def fetch_news():
+#     headers = {
+#         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+#         "Referer": "https://xcancel.com/"  # 关键：伪装成从原站跳转过来
+#     }
+#     req = urllib.request.Request(RSS_URL, headers=headers)
+#     try:
+#         with urllib.request.urlopen(req, timeout=20) as response:
+#             content = response.read()
+#             feed = feedparser.parse(content)
+#             if not feed.entries:
+#                 print("📭 未抓取到任何资讯")
+#                 return [], None
+#             news_list = feed.entries[:MAX_PUSH_COUNT]
+#             latest_link = news_list[0]["link"].strip() if news_list else None
+#             return news_list, latest_link
+#     except HTTPError as e:
+#         print(f"❌ 资讯抓取失败：{e.code} {e.reason}")
+#         return [], None
+#     except Exception as e:
+#         print(f"❌ 资讯抓取失败：{str(e)}")
+#         return [], None
+
+# ===================== 持久化（原逻辑不变） =====================
 def load_last_link():
     if os.path.exists(LAST_LINK_FILE):
         with open(LAST_LINK_FILE, 'r', encoding='utf-8') as f:
@@ -106,12 +126,11 @@ def save_last_link(link):
     with open(LAST_LINK_FILE, 'w', encoding='utf-8') as f:
         f.write(link)
 
-# ===================== 生成多快讯邮件HTML（支持批量推送） =====================
+# ===================== 生成邮件HTML（原逻辑不变） =====================
 def make_email_content(news_list):
     if not news_list:
         return "<p style='font-size:16px; color:#FFFFFF;'>暂无可用的资讯</p>"
     
-    # 样式配置（沿用你原设计）
     title_color = "#C8102E"
     time_color = "#1E90FF"
     serial_color = "#FFFFFF"
@@ -157,7 +176,7 @@ def make_email_content(news_list):
         """)
     return email_title_html + "".join(news_items)
 
-# ===================== 发送邮件 =====================
+# ===================== 发送邮件（原逻辑不变） =====================
 def send_email(html_content):
     if not all([GMAIL_EMAIL, GMAIL_APP_PASSWORD, RECEIVER_EMAILS]):
         print("❌ 请先配置GMAIL_EMAIL、GMAIL_APP_PASSWORD、RECEIVER_EMAILS这3个Secret！")
@@ -195,7 +214,7 @@ def send_email(html_content):
         print(f"❌ 邮件发送失败：{str(e)}")
         raise
 
-# ===================== 程序入口（核心修改：批量推送前100条新内容） =====================
+# ===================== 主入口（原逻辑不变） =====================
 if __name__ == "__main__":
     utc_now = datetime.datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S")
     cst_now = datetime.datetime.now(timezone(timedelta(hours=8))).strftime("%Y-%m-%d %H:%M:%S")
@@ -214,23 +233,19 @@ if __name__ == "__main__":
         new_news = []
 
         if last_link is None:
-            # 首次运行：直接推送前100条
             new_news = news_list
         else:
-            # 遍历新闻列表，收集所有「比上次新」的内容（RSS倒序，直到遇到last_link为止）
             for news in news_list:
                 link = news["link"].strip()
                 if link == last_link:
                     break
                 new_news.append(news)
-            # 反转顺序：让邮件里按「旧→新」排列，更易读
             new_news = new_news[::-1]
 
         if new_news:
             print(f"🚨 检测到 {len(new_news)} 条新资讯，准备推送！")
-            email_html = make_email_content(new_news)
+            email_html = make_email_content(news_list)
             send_email(email_html)
-            # 保存最新一条的链接，避免下次重复推送
             save_last_link(latest_link)
         else:
             print("ℹ️  无新资讯，本次跳过推送")
