@@ -18,9 +18,9 @@ CUSTOM_NICKNAME = "📩全球快讯"
 RSS_URL = "https://rss.xcancel.com/FirstSquawk/rss"
 LAST_LINK_FILE = "last_link.txt"
 
-# 方案一：使用 Feedly 风格的 UA + 合适的 Accept 头（目前成功率最高）
+# 选项一：FreshRSS UA（自托管阅读器常见，常被 xcANCEL 接受）
 REQUEST_HEADERS = {
-    "User-Agent": "Feedly/1.0",
+    "User-Agent": "FreshRSS/1.24.0 (Linux; https://freshrss.org)",
     "Accept": "application/rss+xml, application/xml, text/xml;q=0.9, */*;q=0.8",
     "Accept-Encoding": "gzip, deflate",
     "Connection": "keep-alive"
