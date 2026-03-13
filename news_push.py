@@ -14,39 +14,43 @@ RECEIVER_EMAILS = os.getenv("RECEIVER_EMAILS")
 SMTP_SERVER = "smtp.gmail.com"
 CUSTOM_NICKNAME = "📩全球快讯"
 
-# ---------------------- 基础配置（✅ 切回方案一：RSSHub替代源 + 无额外依赖） ----------------------
-# 原白名单RSS源："https://rss.xcancel.com/FirstSquawk/rss"
-# 替换为RSSHub公开无白名单限制源
-RSS_URL = "https://rsshub.app/xcancel/FirstSquawk"
-LAST_LINK_FILE = "last_link.txt"  # 保留去重逻辑
-# 通用浏览器请求头（无需伪装RSS客户端，RSSHub对访问限制极宽松）
+# ---------------------- 基础配置（不用改） ----------------------
+RSS_URL = "https://rss.xcancel.com/FirstSquawk/rss"
+LAST_LINK_FILE = "last_link.txt"
+
+# 方案一：使用 Feedly 风格的 UA + 合适的 Accept 头（目前成功率最高）
 REQUEST_HEADERS = {
-    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-    "Accept": "*/*",
+    "User-Agent": "Feedly/1.0",
+    "Accept": "application/rss+xml, application/xml, text/xml;q=0.9, */*;q=0.8",
+    "Accept-Encoding": "gzip, deflate",
     "Connection": "keep-alive"
 }
 
-# ✅ 时间解析函数（完全不变）
+# ✅ 修复：支持GMT格式解析，精准转北京时间
 def get_show_time(news):
     beijing_tz = timezone(timedelta(hours=8))
+    # 优先获取pubdate/published（新闻发布时间），去除前后空格
     pub_date_str = news.get("pubdate", news.get("published", "")).strip()
     
     if pub_date_str:
         try:
+            # 新增支持GMT时区格式，调整格式顺序（高频在前）
             dt_formats = [
-                "%a, %d %b %Y %H:%M:%S GMT",
-                "%a, %d %b %Y %H:%M:%S %z",
-                "%a, %d %b %Y %H:%M %z",
-                "%d %b %Y %H:%M:%S %z",
-                "%Y-%m-%d %H:%M:%S %z"
+                "%a, %d %b %Y %H:%M:%S GMT",  # 目标RSS的实际格式（核心修复）
+                "%a, %d %b %Y %H:%M:%S %z",   # 带+HHMM/-HHMM时区的格式
+                "%a, %d %b %Y %H:%M %z",      # 无秒数+时区
+                "%d %b %Y %H:%M:%S %z",       # 无时区缩写+时区
+                "%Y-%m-%d %H:%M:%S %z"        # 数字日期格式
             ]
             for fmt in dt_formats:
                 try:
                     dt = datetime.datetime.strptime(pub_date_str, fmt)
+                    # 若解析结果是" naive 时间"（如GMT格式），手动绑定UTC时区
                     if dt.tzinfo is None or dt.tzinfo.utcoffset(dt) is None:
                         dt_utc = dt.replace(tzinfo=timezone.utc)
                     else:
                         dt_utc = dt.astimezone(timezone.utc)
+                    # 转北京时间并返回
                     dt_beijing = dt_utc.astimezone(beijing_tz)
                     return dt_beijing.strftime("%Y-%m-%d %H:%M")
                 except:
@@ -54,19 +58,22 @@ def get_show_time(news):
         except:
             pass
 
+    # 若发布时间解析失败，尝试用updated字段
     updated_str = news.get("updated", "").strip()
     if updated_str:
         try:
+            # 处理ISO格式（如2026-01-13T11:57:00Z）
             dt_utc = datetime.datetime.fromisoformat(updated_str.replace('Z', '+00:00'))
             dt_beijing = dt_utc.astimezone(beijing_tz)
             return dt_beijing.strftime("%Y-%m-%d %H:%M")
         except:
             pass
 
+    # 最终兜底：返回当前北京时间（避免空值）
     current_bj = datetime.datetime.now(beijing_tz)
     return current_bj.strftime("%Y-%m-%d %H:%M")
 
-# ✅ 资讯解析规则（完全不变）
+# ✅ 核心规则（无任何多余代码）
 def parse_news_type_and_content(news):
     raw_title = news.get("title", "").strip()
     no_title_flags = ["[No Title]", "no title", "untitled", "- Post from "]
@@ -86,7 +93,7 @@ def parse_news_type_and_content(news):
 
     return forward_tag, content_text
 
-# ✅ 抓取资讯（完全不变，仅使用新RSS源）
+# 抓取资讯（不用改，修正了拼写错误REQUEST_HEADERS）
 def fetch_news():
     try:
         response = requests.get(RSS_URL, headers=REQUEST_HEADERS, timeout=15)
@@ -102,7 +109,7 @@ def fetch_news():
         print(f"❌ 资讯抓取失败：{str(e)}")
         return None, None
 
-# ✅ 去重逻辑（完全不变）
+# 检查是否推送（防重复，不用改）
 def check_push():
     is_first_run = not os.path.exists(LAST_LINK_FILE)
     last_saved_link = ""
@@ -127,12 +134,13 @@ def check_push():
         print(f"ℹ️  无新资讯，本次跳过推送")
         return False, None
 
-# ✅ 邮件模板（完全不变，保持你原有的样式）
+# ✅ 核心修改：只改【时间】和（懂王转发贴）间距为1px，其他全部不变
 def make_email_content(all_news):
     if not all_news:
         return "<p style='font-size:16px; color:#FFFFFF;'>暂无可用的资讯</p>"
     news_list = all_news[:300]
 
+    # 颜色配置（匹配截图）
     title_color = "#C8102E"
     time_color = "#1E90FF"
     serial_color = "#FFFFFF"
@@ -141,6 +149,7 @@ def make_email_content(all_news):
     link_color = "#1E90FF"
     arrow_color = "#FFCC00"
     
+    # 你的原参数 全部不变
     content_indent = "20px"
     card_margin = "0 0 4px 0"
     card_padding = "6px"
@@ -164,6 +173,7 @@ def make_email_content(all_news):
                 <span style='color:{serial_color}; font-size:15px; font-weight:bold; margin-right: 8px;'>{i}.</span>
                 <div style='flex: 1;'>
                     <span style='color:{time_color}; font-weight:bold; font-size:15px;'>【{show_time}】</span>
+                    <!-- 仅改这行：间距从 0 6px 改为 0 1px，实现贴近效果 -->
                     <span style='color:{forward_color}; font-weight:bold; margin:0 1px; font-size:15px;'>{forward_tag}</span>
                 </div>
             </div>
@@ -178,7 +188,7 @@ def make_email_content(all_news):
         """)
     return email_title_html + "".join(news_items)
 
-# ✅ 邮件发送逻辑（完全不变）
+# 发送邮件（不用改）
 def send_email(html_content):
     if not all([GMAIL_EMAIL, GMAIL_APP_PASSWORD, RECEIVER_EMAILS]):
         print("❌ 请先配置GMAIL_EMAIL、GMAIL_APP_PASSWORD、RECEIVER_EMAILS这3个Secret！")
@@ -214,7 +224,7 @@ def send_email(html_content):
         print(f"❌ 邮件发送失败：{str(e)}")
         raise
 
-# ✅ 程序入口（完全不变）
+# 程序入口（不用改）
 if __name__ == "__main__":
     utc_now = datetime.datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S")
     cst_now = datetime.datetime.now(timezone(timedelta(hours=8))).strftime("%Y-%m-%d %H:%M:%S")
@@ -232,4 +242,3 @@ if __name__ == "__main__":
     except Exception as e:
         print(f"💥 程序异常：{str(e)}")
         raise
-
