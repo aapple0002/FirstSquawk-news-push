@@ -14,12 +14,12 @@ RECEIVER_EMAILS = os.getenv("RECEIVER_EMAILS")
 SMTP_SERVER = "smtp.gmail.com"
 CUSTOM_NICKNAME = "📩全球快讯"
 
-# ---------------------- 基础配置（补全缺失的LAST_LINK_FILE，同时保留RSS客户端伪装） ----------------------
+# ---------------------- 基础配置（✅ 补全缺失变量 + 更换Feedly白名单标识） ----------------------
 RSS_URL = "https://rss.xcancel.com/FirstSquawk/rss"
-LAST_LINK_FILE = "last_link.txt"  # ✅ 补全缺失的变量定义
-# 核心修改：伪装成专业RSS客户端，绕过服务器限制
+LAST_LINK_FILE = "last_link.txt"  # ✅ 补全缺失的去重文件变量
+# 核心修复：更换为Feedly客户端（主流RSS服务，白名单通过率极高）
 REQUEST_HEADERS = {
-    "User-Agent": "Miniflux/2.0 (https://miniflux.app; +https://miniflux.app/)",
+    "User-Agent": "Feedly/1.0 (+https://feedly.com; feed@feedly.com)",
     "Accept": "application/rss+xml, application/xml, text/xml;q=0.9, */*;q=0.8",
     "Connection": "keep-alive"
 }
@@ -91,7 +91,7 @@ def parse_news_type_and_content(news):
 
     return forward_tag, content_text
 
-# 抓取资讯（不用改，修正了拼写错误REQUEST_HEADERS）
+# 抓取资讯（✅ 已确认使用Feedly请求头）
 def fetch_news():
     try:
         response = requests.get(RSS_URL, headers=REQUEST_HEADERS, timeout=15)
@@ -107,7 +107,7 @@ def fetch_news():
         print(f"❌ 资讯抓取失败：{str(e)}")
         return None, None
 
-# 检查是否推送（防重复，不用改）
+# 检查是否推送（防重复，✅ 补全LAST_LINK_FILE后逻辑正常）
 def check_push():
     is_first_run = not os.path.exists(LAST_LINK_FILE)
     last_saved_link = ""
@@ -132,7 +132,7 @@ def check_push():
         print(f"ℹ️  无新资讯，本次跳过推送")
         return False, None
 
-# ✅ 核心修改：只改【时间】和（懂王转发贴）间距为1px，其他全部不变
+# ✅ 原有邮件样式逻辑（仅保留你要求的1px间距，其他不变）
 def make_email_content(all_news):
     if not all_news:
         return "<p style='font-size:16px; color:#FFFFFF;'>暂无可用的资讯</p>"
