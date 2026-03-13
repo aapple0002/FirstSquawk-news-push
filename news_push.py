@@ -14,8 +14,9 @@ RECEIVER_EMAILS = os.getenv("RECEIVER_EMAILS")
 SMTP_SERVER = "smtp.gmail.com"
 CUSTOM_NICKNAME = "📩全球快讯"
 
-# ---------------------- 基础配置（仅修改此处请求头伪装成RSS客户端） ----------------------
+# ---------------------- 基础配置（补全缺失的LAST_LINK_FILE，同时保留RSS客户端伪装） ----------------------
 RSS_URL = "https://rss.xcancel.com/FirstSquawk/rss"
+LAST_LINK_FILE = "last_link.txt"  # ✅ 补全缺失的变量定义
 # 核心修改：伪装成专业RSS客户端，绕过服务器限制
 REQUEST_HEADERS = {
     "User-Agent": "Miniflux/2.0 (https://miniflux.app; +https://miniflux.app/)",
