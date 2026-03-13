@@ -14,13 +14,15 @@ RECEIVER_EMAILS = os.getenv("RECEIVER_EMAILS")
 SMTP_SERVER = "smtp.gmail.com"
 CUSTOM_NICKNAME = "📩全球快讯"
 
-# ---------------------- 基础配置（✅ 补全缺失变量 + 更换Feedly白名单标识） ----------------------
-RSS_URL = "https://rss.xcancel.com/FirstSquawk/rss"
-LAST_LINK_FILE = "last_link.txt"  # ✅ 补全缺失的去重文件变量
-# 核心修复：更换为Feedly客户端（主流RSS服务，白名单通过率极高）
+# ---------------------- 基础配置（✅ 方案一核心修改：替换为RSSHub源 + 通用请求头） ----------------------
+# 原RSS源："https://rss.xcancel.com/FirstSquawk/rss"
+# 替换为RSSHub生成的公开无白名单限制源
+RSS_URL = "https://rsshub.app/xcancel/FirstSquawk"
+LAST_LINK_FILE = "last_link.txt"  # 保留去重变量
+# 通用浏览器请求头（RSSHub对客户端限制极宽松，无需伪装RSS客户端）
 REQUEST_HEADERS = {
-    "User-Agent": "Feedly/1.0 (+https://feedly.com; feed@feedly.com)",
-    "Accept": "application/rss+xml, application/xml, text/xml;q=0.9, */*;q=0.8",
+    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+    "Accept": "*/*",
     "Connection": "keep-alive"
 }
 
@@ -91,7 +93,7 @@ def parse_news_type_and_content(news):
 
     return forward_tag, content_text
 
-# 抓取资讯（✅ 已确认使用Feedly请求头）
+# 抓取资讯（逻辑完全不变，仅使用新RSS源和请求头）
 def fetch_news():
     try:
         response = requests.get(RSS_URL, headers=REQUEST_HEADERS, timeout=15)
@@ -107,7 +109,7 @@ def fetch_news():
         print(f"❌ 资讯抓取失败：{str(e)}")
         return None, None
 
-# 检查是否推送（防重复，✅ 补全LAST_LINK_FILE后逻辑正常）
+# 检查是否推送（防重复，逻辑不变）
 def check_push():
     is_first_run = not os.path.exists(LAST_LINK_FILE)
     last_saved_link = ""
@@ -132,7 +134,7 @@ def check_push():
         print(f"ℹ️  无新资讯，本次跳过推送")
         return False, None
 
-# ✅ 原有邮件样式逻辑（仅保留你要求的1px间距，其他不变）
+# ✅ 原有邮件样式逻辑（完全不变）
 def make_email_content(all_news):
     if not all_news:
         return "<p style='font-size:16px; color:#FFFFFF;'>暂无可用的资讯</p>"
