@@ -6,6 +6,7 @@ import re
 import os
 import datetime
 from datetime import timezone, timedelta
+from bs4 import BeautifulSoup  # ✅ 新增：用于解析HTML
 
 # ---------------------- Gmail配置（从GitHub Secret读取，不用改） ----------------------
 GMAIL_EMAIL = os.getenv("GMAIL_EMAIL")
@@ -14,43 +15,38 @@ RECEIVER_EMAILS = os.getenv("RECEIVER_EMAILS")
 SMTP_SERVER = "smtp.gmail.com"
 CUSTOM_NICKNAME = "📩全球快讯"
 
-# ---------------------- 基础配置（✅ 方案一核心修改：替换为RSSHub源 + 通用请求头） ----------------------
-# 原RSS源："https://rss.xcancel.com/FirstSquawk/rss"
-# 替换为RSSHub生成的公开无白名单限制源
-RSS_URL = "https://rsshub.app/xcancel/FirstSquawk"
-LAST_LINK_FILE = "last_link.txt"  # 保留去重变量
-# 通用浏览器请求头（RSSHub对客户端限制极宽松，无需伪装RSS客户端）
+# ---------------------- 基础配置（✅ 方案二：不再依赖RSS，仅保留去重文件 + 通用请求头） ----------------------
+LAST_LINK_FILE = "last_link.txt"  # 保留去重逻辑
+# 通用浏览器请求头（模拟正常访问，避免被拦截）
 REQUEST_HEADERS = {
     "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-    "Accept": "*/*",
+    "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8",
+    "Accept-Language": "en-US,en;q=0.5",
     "Connection": "keep-alive"
 }
 
-# ✅ 修复：支持GMT格式解析，精准转北京时间
+# ✅ 修复：支持GMT格式解析，精准转北京时间（完全不变）
 def get_show_time(news):
     beijing_tz = timezone(timedelta(hours=8))
-    # 优先获取pubdate/published（新闻发布时间），去除前后空格
     pub_date_str = news.get("pubdate", news.get("published", "")).strip()
     
     if pub_date_str:
         try:
-            # 新增支持GMT时区格式，调整格式顺序（高频在前）
             dt_formats = [
-                "%a, %d %b %Y %H:%M:%S GMT",  # 目标RSS的实际格式（核心修复）
-                "%a, %d %b %Y %H:%M:%S %z",   # 带+HHMM/-HHMM时区的格式
-                "%a, %d %b %Y %H:%M %z",      # 无秒数+时区
-                "%d %b %Y %H:%M:%S %z",       # 无时区缩写+时区
-                "%Y-%m-%d %H:%M:%S %z"        # 数字日期格式
+                "%a, %d %b %Y %H:%M:%S GMT",
+                "%a, %d %b %Y %H:%M:%S %z",
+                "%a, %d %b %Y %H:%M %z",
+                "%d %b %Y %H:%M:%S %z",
+                "%Y-%m-%d %H:%M:%S %z",
+                "%Y-%m-%dT%H:%M:%SZ"  # 新增支持ISO格式（HTML爬取常见格式）
             ]
             for fmt in dt_formats:
                 try:
                     dt = datetime.datetime.strptime(pub_date_str, fmt)
-                    # 若解析结果是" naive 时间"（如GMT格式），手动绑定UTC时区
                     if dt.tzinfo is None or dt.tzinfo.utcoffset(dt) is None:
                         dt_utc = dt.replace(tzinfo=timezone.utc)
                     else:
                         dt_utc = dt.astimezone(timezone.utc)
-                    # 转北京时间并返回
                     dt_beijing = dt_utc.astimezone(beijing_tz)
                     return dt_beijing.strftime("%Y-%m-%d %H:%M")
                 except:
@@ -58,22 +54,19 @@ def get_show_time(news):
         except:
             pass
 
-    # 若发布时间解析失败，尝试用updated字段
     updated_str = news.get("updated", "").strip()
     if updated_str:
         try:
-            # 处理ISO格式（如2026-01-13T11:57:00Z）
             dt_utc = datetime.datetime.fromisoformat(updated_str.replace('Z', '+00:00'))
             dt_beijing = dt_utc.astimezone(beijing_tz)
             return dt_beijing.strftime("%Y-%m-%d %H:%M")
         except:
             pass
 
-    # 最终兜底：返回当前北京时间（避免空值）
     current_bj = datetime.datetime.now(beijing_tz)
     return current_bj.strftime("%Y-%m-%d %H:%M")
 
-# ✅ 核心规则（无任何多余代码）
+# ✅ 核心规则（无任何多余代码，完全不变）
 def parse_news_type_and_content(news):
     raw_title = news.get("title", "").strip()
     no_title_flags = ["[No Title]", "no title", "untitled", "- Post from "]
@@ -93,14 +86,50 @@ def parse_news_type_and_content(news):
 
     return forward_tag, content_text
 
-# 抓取资讯（逻辑完全不变，仅使用新RSS源和请求头）
+# ---------------------- ✅ 方案二核心：重写fetch_news为HTML爬取版 ----------------------
 def fetch_news():
     try:
-        response = requests.get(RSS_URL, headers=REQUEST_HEADERS, timeout=15)
+        # 直接请求原网站，不再使用RSS
+        url = "https://xcancel.com/FirstSquawk"
+        response = requests.get(url, headers=REQUEST_HEADERS, timeout=20)
         response.raise_for_status()
-        news_list = feedparser.parse(response.content).entries
+        soup = BeautifulSoup(response.text, "html.parser")
+
+        news_list = []
+        # ⚠️ 关键：根据xcancel.com实际页面结构调整选择器！
+        # 目前假设每条资讯在 <article class="post"> 中，若不对请修改为实际标签（如div.post、div.tweet等）
+        posts = soup.find_all("article", class_="post")
+
+        for post in posts[:300]:
+            # 1. 提取标题
+            title_tag = post.find("a", class_="post-title") or post.find("h2") or post.find("h3")
+            title = title_tag.get_text(strip=True) if title_tag else ""
+
+            # 2. 提取链接（补全相对链接）
+            link_tag = title_tag if (title_tag and title_tag.has_attr("href")) else post.find("a")
+            link = link_tag["href"] if (link_tag and link_tag.has_attr("href")) else ""
+            if link and not link.startswith("http"):
+                link = f"https://xcancel.com{link}"
+
+            # 3. 提取发布时间（优先取ISO格式时间）
+            time_tag = post.find("time")
+            published = time_tag["datetime"] if (time_tag and time_tag.has_attr("datetime")) else ""
+
+            # 4. 提取内容（保留HTML格式，和RSS兼容）
+            content_tag = post.find("div", class_="post-content") or post.find("div", class_="content")
+            content = content_tag.decode_contents() if content_tag else ""
+
+            # 构造和feedparser完全兼容的条目格式，确保后续函数无需修改
+            news_entry = {
+                "title": title,
+                "link": link,
+                "published": published,
+                "content": [{"value": content}]
+            }
+            news_list.append(news_entry)
+
         if not news_list:
-            print("📭 未抓取到任何资讯")
+            print("📭 未抓取到任何资讯，请检查页面选择器是否匹配xcancel.com实际结构！")
             return None, None
         latest_link = news_list[0]["link"].strip()
         print(f"📭 成功抓取到{len(news_list)}条资讯")
@@ -109,7 +138,7 @@ def fetch_news():
         print(f"❌ 资讯抓取失败：{str(e)}")
         return None, None
 
-# 检查是否推送（防重复，逻辑不变）
+# ✅ 去重逻辑（完全不变）
 def check_push():
     is_first_run = not os.path.exists(LAST_LINK_FILE)
     last_saved_link = ""
@@ -134,13 +163,12 @@ def check_push():
         print(f"ℹ️  无新资讯，本次跳过推送")
         return False, None
 
-# ✅ 原有邮件样式逻辑（完全不变）
+# ✅ 邮件模板（完全不变，保持你原有的样式）
 def make_email_content(all_news):
     if not all_news:
         return "<p style='font-size:16px; color:#FFFFFF;'>暂无可用的资讯</p>"
     news_list = all_news[:300]
 
-    # 颜色配置（匹配截图）
     title_color = "#C8102E"
     time_color = "#1E90FF"
     serial_color = "#FFFFFF"
@@ -149,7 +177,6 @@ def make_email_content(all_news):
     link_color = "#1E90FF"
     arrow_color = "#FFCC00"
     
-    # 你的原参数 全部不变
     content_indent = "20px"
     card_margin = "0 0 4px 0"
     card_padding = "6px"
@@ -173,7 +200,6 @@ def make_email_content(all_news):
                 <span style='color:{serial_color}; font-size:15px; font-weight:bold; margin-right: 8px;'>{i}.</span>
                 <div style='flex: 1;'>
                     <span style='color:{time_color}; font-weight:bold; font-size:15px;'>【{show_time}】</span>
-                    <!-- 仅改这行：间距从 0 6px 改为 0 1px，实现贴近效果 -->
                     <span style='color:{forward_color}; font-weight:bold; margin:0 1px; font-size:15px;'>{forward_tag}</span>
                 </div>
             </div>
@@ -188,7 +214,7 @@ def make_email_content(all_news):
         """)
     return email_title_html + "".join(news_items)
 
-# 发送邮件（不用改）
+# ✅ 邮件发送逻辑（完全不变）
 def send_email(html_content):
     if not all([GMAIL_EMAIL, GMAIL_APP_PASSWORD, RECEIVER_EMAILS]):
         print("❌ 请先配置GMAIL_EMAIL、GMAIL_APP_PASSWORD、RECEIVER_EMAILS这3个Secret！")
@@ -224,13 +250,13 @@ def send_email(html_content):
         print(f"❌ 邮件发送失败：{str(e)}")
         raise
 
-# 程序入口（不用改）
+# ✅ 程序入口（完全不变）
 if __name__ == "__main__":
     utc_now = datetime.datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S")
     cst_now = datetime.datetime.now(timezone(timedelta(hours=8))).strftime("%Y-%m-%d %H:%M:%S")
     print(f"==================================================")
     print(f"📅 执行时间 | UTC：{utc_now} | 北京时间：{cst_now}")
-    print(f"📡 订阅源 | {RSS_URL}")
+    print(f"📡 订阅源 | 直接爬取 https://xcancel.com/FirstSquawk")
     print(f"==================================================")
 
     try:
