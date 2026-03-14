@@ -18,7 +18,7 @@ CUSTOM_NICKNAME = "📩全球快讯"
 RSS_URL = "https://rss.xcancel.com/FirstSquawk/rss"
 LAST_LINK_FILE = "last_link.txt"
 
-# 选项一：FreshRSS UA（自托管阅读器常见，常被 xcANCEL 接受）
+# 当前最可能被接受的 UA（xcancel 官方推荐的阅读器风格）
 REQUEST_HEADERS = {
     "User-Agent": "FreshRSS/1.24.0 (Linux; https://freshrss.org)",
     "Accept": "application/rss+xml, application/xml, text/xml;q=0.9, */*;q=0.8",
@@ -29,28 +29,24 @@ REQUEST_HEADERS = {
 # ✅ 修复：支持GMT格式解析，精准转北京时间
 def get_show_time(news):
     beijing_tz = timezone(timedelta(hours=8))
-    # 优先获取pubdate/published（新闻发布时间），去除前后空格
     pub_date_str = news.get("pubdate", news.get("published", "")).strip()
     
     if pub_date_str:
         try:
-            # 新增支持GMT时区格式，调整格式顺序（高频在前）
             dt_formats = [
-                "%a, %d %b %Y %H:%M:%S GMT",  # 目标RSS的实际格式（核心修复）
-                "%a, %d %b %Y %H:%M:%S %z",   # 带+HHMM/-HHMM时区的格式
-                "%a, %d %b %Y %H:%M %z",      # 无秒数+时区
-                "%d %b %Y %H:%M:%S %z",       # 无时区缩写+时区
-                "%Y-%m-%d %H:%M:%S %z"        # 数字日期格式
+                "%a, %d %b %Y %H:%M:%S GMT",
+                "%a, %d %b %Y %H:%M:%S %z",
+                "%a, %d %b %Y %H:%M %z",
+                "%d %b %Y %H:%M:%S %z",
+                "%Y-%m-%d %H:%M:%S %z"
             ]
             for fmt in dt_formats:
                 try:
                     dt = datetime.datetime.strptime(pub_date_str, fmt)
-                    # 若解析结果是" naive 时间"（如GMT格式），手动绑定UTC时区
                     if dt.tzinfo is None or dt.tzinfo.utcoffset(dt) is None:
                         dt_utc = dt.replace(tzinfo=timezone.utc)
                     else:
                         dt_utc = dt.astimezone(timezone.utc)
-                    # 转北京时间并返回
                     dt_beijing = dt_utc.astimezone(beijing_tz)
                     return dt_beijing.strftime("%Y-%m-%d %H:%M")
                 except:
@@ -58,22 +54,18 @@ def get_show_time(news):
         except:
             pass
 
-    # 若发布时间解析失败，尝试用updated字段
     updated_str = news.get("updated", "").strip()
     if updated_str:
         try:
-            # 处理ISO格式（如2026-01-13T11:57:00Z）
             dt_utc = datetime.datetime.fromisoformat(updated_str.replace('Z', '+00:00'))
             dt_beijing = dt_utc.astimezone(beijing_tz)
             return dt_beijing.strftime("%Y-%m-%d %H:%M")
         except:
             pass
 
-    # 最终兜底：返回当前北京时间（避免空值）
     current_bj = datetime.datetime.now(beijing_tz)
     return current_bj.strftime("%Y-%m-%d %H:%M")
 
-# ✅ 核心规则（无任何多余代码）
 def parse_news_type_and_content(news):
     raw_title = news.get("title", "").strip()
     no_title_flags = ["[No Title]", "no title", "untitled", "- Post from "]
@@ -93,7 +85,7 @@ def parse_news_type_and_content(news):
 
     return forward_tag, content_text
 
-# 抓取资讯（不用改，修正了拼写错误REQUEST_HEADERS）
+# 抓取资讯（关键修改：捕获 whitelist 错误并打印完整页面）
 def fetch_news():
     try:
         response = requests.get(RSS_URL, headers=REQUEST_HEADERS, timeout=15)
@@ -107,6 +99,11 @@ def fetch_news():
         return news_list, latest_link
     except Exception as e:
         print(f"❌ 资讯抓取失败：{str(e)}")
+        if hasattr(response, 'text') and ("whitelisted" in response.text.lower() or "RSS reader" in response.text):
+            print("\n🔑 === xcANCEL 白名单错误完整内容 ===")
+            print(response.text.strip())
+            print("=====================================")
+            print("请复制上面那串很长的 hex ID（以 4870e1b7... 开头的那段），然后按下面步骤操作")
         return None, None
 
 # 检查是否推送（防重复，不用改）
@@ -140,7 +137,6 @@ def make_email_content(all_news):
         return "<p style='font-size:16px; color:#FFFFFF;'>暂无可用的资讯</p>"
     news_list = all_news[:300]
 
-    # 颜色配置（匹配截图）
     title_color = "#C8102E"
     time_color = "#1E90FF"
     serial_color = "#FFFFFF"
@@ -149,7 +145,6 @@ def make_email_content(all_news):
     link_color = "#1E90FF"
     arrow_color = "#FFCC00"
     
-    # 你的原参数 全部不变
     content_indent = "20px"
     card_margin = "0 0 4px 0"
     card_padding = "6px"
@@ -173,7 +168,6 @@ def make_email_content(all_news):
                 <span style='color:{serial_color}; font-size:15px; font-weight:bold; margin-right: 8px;'>{i}.</span>
                 <div style='flex: 1;'>
                     <span style='color:{time_color}; font-weight:bold; font-size:15px;'>【{show_time}】</span>
-                    <!-- 仅改这行：间距从 0 6px 改为 0 1px，实现贴近效果 -->
                     <span style='color:{forward_color}; font-weight:bold; margin:0 1px; font-size:15px;'>{forward_tag}</span>
                 </div>
             </div>
