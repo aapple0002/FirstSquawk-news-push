@@ -12,29 +12,25 @@ GMAIL_EMAIL = os.getenv("GMAIL_EMAIL")
 GMAIL_APP_PASSWORD = os.getenv("GMAIL_APP_PASSWORD")
 RECEIVER_EMAILS = os.getenv("RECEIVER_EMAILS")
 SMTP_SERVER = "smtp.gmail.com"
-CUSTOM_NICKNAME = "📩全球快讯"
+CUSTOM_NICKNAME = "📩全球速递"
 
 # ---------------------- 基础配置（不用改） ----------------------
-RSS_URL = "https://rss.xcancel.com/FirstSquawk/rss"
+RSS_URL = "http://tweetlook.com/FirstSquawk/rss"
 LAST_LINK_FILE = "last_link.txt"
-
-# 当前最可能被接受的 UA（xcancel 官方推荐的阅读器风格）
 REQUEST_HEADERS = {
-    "User-Agent": "FreshRSS/1.24.0 (Linux; https://freshrss.org)",
-    "Accept": "application/rss+xml, application/xml, text/xml;q=0.9, */*;q=0.8",
-    "Accept-Encoding": "gzip, deflate",
+    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+    "Accept": "*/*",
     "Connection": "keep-alive"
 }
 
-# ✅ 修复：支持GMT格式解析，精准转北京时间
+# ✅ 精准提取pubDate并转北京时间
 def get_show_time(news):
     beijing_tz = timezone(timedelta(hours=8))
-    pub_date_str = news.get("pubdate", news.get("published", "")).strip()
+    pub_date_str = news.get("pubdate", news.get("published", ""))
     
     if pub_date_str:
         try:
             dt_formats = [
-                "%a, %d %b %Y %H:%M:%S GMT",
                 "%a, %d %b %Y %H:%M:%S %z",
                 "%a, %d %b %Y %H:%M %z",
                 "%d %b %Y %H:%M:%S %z",
@@ -42,11 +38,7 @@ def get_show_time(news):
             ]
             for fmt in dt_formats:
                 try:
-                    dt = datetime.datetime.strptime(pub_date_str, fmt)
-                    if dt.tzinfo is None or dt.tzinfo.utcoffset(dt) is None:
-                        dt_utc = dt.replace(tzinfo=timezone.utc)
-                    else:
-                        dt_utc = dt.astimezone(timezone.utc)
+                    dt_utc = datetime.datetime.strptime(pub_date_str, fmt)
                     dt_beijing = dt_utc.astimezone(beijing_tz)
                     return dt_beijing.strftime("%Y-%m-%d %H:%M")
                 except:
@@ -54,7 +46,7 @@ def get_show_time(news):
         except:
             pass
 
-    updated_str = news.get("updated", "").strip()
+    updated_str = news.get("updated", "")
     if updated_str:
         try:
             dt_utc = datetime.datetime.fromisoformat(updated_str.replace('Z', '+00:00'))
@@ -66,6 +58,7 @@ def get_show_time(news):
     current_bj = datetime.datetime.now(beijing_tz)
     return current_bj.strftime("%Y-%m-%d %H:%M")
 
+# ✅ 核心规则（无任何多余代码）
 def parse_news_type_and_content(news):
     raw_title = news.get("title", "").strip()
     no_title_flags = ["[No Title]", "no title", "untitled", "- Post from "]
@@ -78,32 +71,27 @@ def parse_news_type_and_content(news):
         clean_text = re.sub(r'https?://\S+', '', clean_text).strip()
         clean_text = re.sub(r'^(\s*RT[:\s]*|\s*@\w+:)', '', clean_text, flags=re.IGNORECASE)
         trump_text = clean_text.strip() if clean_text and len(clean_text) > 2 else "无文字描述"
-        content_text = f"【快讯】：{trump_text}"
+        content_text = f"【懂王】：{trump_text}"
     else:
         clean_title = re.sub(r'https?://\S+', '', raw_title).strip()
-        content_text = f"【快讯】：{clean_title}"
+        content_text = f"【懂王】：{clean_title}"
 
     return forward_tag, content_text
 
-# 抓取资讯（关键修改：捕获 whitelist 错误并打印完整页面）
+# 抓取资讯（不用改，修正了拼写错误REQUEST_HEADERS）
 def fetch_news():
     try:
         response = requests.get(RSS_URL, headers=REQUEST_HEADERS, timeout=15)
         response.raise_for_status()
         news_list = feedparser.parse(response.content).entries
         if not news_list:
-            print("📭 未抓取到任何资讯")
+            print("📭 未抓取到任何Trump Truth资讯")
             return None, None
         latest_link = news_list[0]["link"].strip()
-        print(f"📭 成功抓取到{len(news_list)}条资讯")
+        print(f"📭 成功抓取到{len(news_list)}条Trump Truth资讯")
         return news_list, latest_link
     except Exception as e:
         print(f"❌ 资讯抓取失败：{str(e)}")
-        if hasattr(response, 'text') and ("whitelisted" in response.text.lower() or "RSS reader" in response.text):
-            print("\n🔑 === xcANCEL 白名单错误完整内容 ===")
-            print(response.text.strip())
-            print("=====================================")
-            print("请复制上面那串很长的 hex ID（以 4870e1b7... 开头的那段），然后按下面步骤操作")
         return None, None
 
 # 检查是否推送（防重复，不用改）
@@ -134,9 +122,10 @@ def check_push():
 # ✅ 核心修改：只改【时间】和（懂王转发贴）间距为1px，其他全部不变
 def make_email_content(all_news):
     if not all_news:
-        return "<p style='font-size:16px; color:#FFFFFF;'>暂无可用的资讯</p>"
+        return "<p style='font-size:16px; color:#FFFFFF;'>暂无可用的Trump Truth资讯</p>"
     news_list = all_news[:300]
 
+    # 颜色配置（匹配截图）
     title_color = "#C8102E"
     time_color = "#1E90FF"
     serial_color = "#FFFFFF"
@@ -145,6 +134,7 @@ def make_email_content(all_news):
     link_color = "#1E90FF"
     arrow_color = "#FFCC00"
     
+    # 你的原参数 全部不变
     content_indent = "20px"
     card_margin = "0 0 4px 0"
     card_padding = "6px"
@@ -152,7 +142,7 @@ def make_email_content(all_news):
 
     email_title_html = f"""
     <p style='margin: 0 0 8px 0; padding: 6px; background-color:#2D2D2D; border-left:4px solid {title_color};'>
-        <strong><span style='color:{title_color}; font-size:18px;'>♥️ 「7*24全球速递」</span></strong>
+        <strong><span style='color:{title_color}; font-size:18px;'>♥️ 「7*24真实社交速递」</span></strong>
     </p>
     """
 
@@ -168,7 +158,8 @@ def make_email_content(all_news):
                 <span style='color:{serial_color}; font-size:15px; font-weight:bold; margin-right: 8px;'>{i}.</span>
                 <div style='flex: 1;'>
                     <span style='color:{time_color}; font-weight:bold; font-size:15px;'>【{show_time}】</span>
-                    <span style='color:{forward_color}; font-weight:bold; margin:0 1px; font-size:15px;'>{forward_tag}</span>
+                    <!-- 仅改这行：间距从 0 6px 改为 0 1px，实现贴近效果 -->
+                    <span style='color:{forward_color}; font-weight:bold; margin:0 0px; font-size:15px;'>{forward_tag}</span>
                 </div>
             </div>
             <p style='margin:{line_margin}; padding:0 0 0 {content_indent}; line-height:1.4; font-size:16px; color:{content_color}; margin-top:0;'>
@@ -224,7 +215,7 @@ if __name__ == "__main__":
     cst_now = datetime.datetime.now(timezone(timedelta(hours=8))).strftime("%Y-%m-%d %H:%M:%S")
     print(f"==================================================")
     print(f"📅 执行时间 | UTC：{utc_now} | 北京时间：{cst_now}")
-    print(f"📡 订阅源 | {RSS_URL}")
+    print(f"📡 订阅源 | Trump Truth（{RSS_URL}）")
     print(f"==================================================")
 
     try:
