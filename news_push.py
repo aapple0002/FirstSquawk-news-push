@@ -12,7 +12,7 @@ GMAIL_EMAIL = os.getenv("GMAIL_EMAIL")
 GMAIL_APP_PASSWORD = os.getenv("GMAIL_APP_PASSWORD")
 RECEIVER_EMAILS = os.getenv("RECEIVER_EMAILS")
 SMTP_SERVER = "smtp.gmail.com"
-CUSTOM_NICKNAME = "📩懂王快讯"
+CUSTOM_NICKNAME = "📩全球速递"
 
 # ---------------------- 基础配置（不用改） ----------------------
 RSS_URL = "http://tweetlook.com/FirstSquawk/rss"
@@ -59,10 +59,10 @@ def parse_news_type_and_content(news):
         clean_text = re.sub(r'https?://\S+', '', clean_text).strip()
         clean_text = re.sub(r'^(\s*RT[:\s]*|\s*@\w+:)', '', clean_text, flags=re.IGNORECASE)
         trump_text = clean_text.strip() if clean_text and len(clean_text) > 2 else "无文字描述"
-        content_text = f"【懂王】：{trump_text}"
+        content_text = f"【刚刚】：{trump_text}"
     else:
         clean_title = re.sub(r'https?://\S+', '', raw_title).strip()
-        content_text = f"【懂王】：{clean_title}"
+        content_text = f"【刚刚】：{clean_title}"
 
     return forward_tag, content_text
 
@@ -110,7 +110,7 @@ def check_push():
 # ✅ 核心修改：只改【时间】和（懂王转发贴）间距为1px，其他全部不变
 def make_email_content(all_news):
     if not all_news:
-        return "<p style='font-size:16px; color:#FFFFFF;'>暂无可用的Trump Truth资讯</p>"
+        return "<p style='font-size:16px; color:#FFFFFF;'>暂无可用的全球速递</p>"
     # 优化：限制最多20条，避免邮件过长
     news_list = all_news[:20]
 
@@ -131,7 +131,7 @@ def make_email_content(all_news):
 
     email_title_html = f"""
     <p style='margin: 0 0 8px 0; padding: 6px; background-color:#2D2D2D; border-left:4px solid {title_color};'>
-        <strong><span style='color:{title_color}; font-size:18px;'>♥️ 「7*24真实社交速递」</span></strong>
+        <strong><span style='color:{title_color}; font-size:18px;'>♥️ 「7*24时讯速递」</span></strong>
     </p>
     """
 
