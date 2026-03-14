@@ -12,7 +12,7 @@ GMAIL_EMAIL = os.getenv("GMAIL_EMAIL")
 GMAIL_APP_PASSWORD = os.getenv("GMAIL_APP_PASSWORD")
 RECEIVER_EMAILS = os.getenv("RECEIVER_EMAILS")
 SMTP_SERVER = "smtp.gmail.com"
-CUSTOM_NICKNAME = "📩全球速递"
+CUSTOM_NICKNAME = "📩懂王快讯"
 
 # ---------------------- 基础配置（不用改） ----------------------
 RSS_URL = "http://tweetlook.com/FirstSquawk/rss"
@@ -23,40 +23,28 @@ REQUEST_HEADERS = {
     "Connection": "keep-alive"
 }
 
-# ✅ 精准提取pubDate并转北京时间
+# ✅ 优化后：用 feedparser 结构化时间，彻底避免字符串解析失败问题
 def get_show_time(news):
     beijing_tz = timezone(timedelta(hours=8))
-    pub_date_str = news.get("pubdate", news.get("published", ""))
-    
-    if pub_date_str:
-        try:
-            dt_formats = [
-                "%a, %d %b %Y %H:%M:%S %z",
-                "%a, %d %b %Y %H:%M %z",
-                "%d %b %Y %H:%M:%S %z",
-                "%Y-%m-%d %H:%M:%S %z"
-            ]
-            for fmt in dt_formats:
-                try:
-                    dt_utc = datetime.datetime.strptime(pub_date_str, fmt)
-                    dt_beijing = dt_utc.astimezone(beijing_tz)
-                    return dt_beijing.strftime("%Y-%m-%d %H:%M")
-                except:
-                    continue
-        except:
-            pass
-
-    updated_str = news.get("updated", "")
-    if updated_str:
-        try:
-            dt_utc = datetime.datetime.fromisoformat(updated_str.replace('Z', '+00:00'))
-            dt_beijing = dt_utc.astimezone(beijing_tz)
-            return dt_beijing.strftime("%Y-%m-%d %H:%M")
-        except:
-            pass
-
-    current_bj = datetime.datetime.now(beijing_tz)
-    return current_bj.strftime("%Y-%m-%d %H:%M")
+    # 优先使用 feedparser 解析好的 published 结构化时间（UTC）
+    if hasattr(news, 'published_parsed') and news.published_parsed:
+        # struct_time 转 datetime（带 UTC 时区）
+        dt_utc = datetime.datetime(*news.published_parsed[:6], tzinfo=timezone.utc)
+        dt_beijing = dt_utc.astimezone(beijing_tz)
+        # 可选：调试日志，确认时间来源
+        # print(f"[时间调试] 新闻链接: {news.get('link','')} | 发布时间(北京): {dt_beijing.strftime('%Y-%m-%d %H:%M')}")
+        return dt_beijing.strftime("%Y-%m-%d %H:%M")
+    # 备用：如果 published 不存在，用 updated 结构化时间
+    elif hasattr(news, 'updated_parsed') and news.updated_parsed:
+        dt_utc = datetime.datetime(*news.updated_parsed[:6], tzinfo=timezone.utc)
+        dt_beijing = dt_utc.astimezone(beijing_tz)
+        # print(f"[时间调试] 新闻链接: {news.get('link','')} | 更新时间(北京): {dt_beijing.strftime('%Y-%m-%d %H:%M')}")
+        return dt_beijing.strftime("%Y-%m-%d %H:%M")
+    # 兜底：极端情况才用当前时间（理论上不会触发）
+    else:
+        current_bj = datetime.datetime.now(beijing_tz)
+        print(f"[时间警告] 无法解析时间，使用当前北京时间: {current_bj.strftime('%Y-%m-%d %H:%M')}")
+        return current_bj.strftime("%Y-%m-%d %H:%M")
 
 # ✅ 核心规则（无任何多余代码）
 def parse_news_type_and_content(news):
@@ -123,7 +111,8 @@ def check_push():
 def make_email_content(all_news):
     if not all_news:
         return "<p style='font-size:16px; color:#FFFFFF;'>暂无可用的Trump Truth资讯</p>"
-    news_list = all_news[:300]
+    # 优化：限制最多20条，避免邮件过长
+    news_list = all_news[:20]
 
     # 颜色配置（匹配截图）
     title_color = "#C8102E"
@@ -158,7 +147,7 @@ def make_email_content(all_news):
                 <span style='color:{serial_color}; font-size:15px; font-weight:bold; margin-right: 8px;'>{i}.</span>
                 <div style='flex: 1;'>
                     <span style='color:{time_color}; font-weight:bold; font-size:15px;'>【{show_time}】</span>
-                    <!-- 仅改这行：间距从 0 6px 改为 0 1px，实现贴近效果 -->
+                    <!-- 仅改这行：间距从 0 6px 改为 0 0px，实现贴近效果 -->
                     <span style='color:{forward_color}; font-weight:bold; margin:0 0px; font-size:15px;'>{forward_tag}</span>
                 </div>
             </div>
